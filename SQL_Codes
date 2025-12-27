@@ -1,0 +1,113 @@
+--------------------------------------------------------------------------------------------
+Query - 1: Airlines with the most flights by Year 
+--------------------------------------------------------------------------------------------
+
+WITH flight_count AS (
+  SELECT 
+    mkt_unique_carrier AS airline, 
+    year, 
+    COUNT(*) AS total_count
+  FROM “flight-2023”
+  GROUP BY mkt_unique_carrier, year
+  UNION ALL
+  SELECT 
+    mkt_unique_carrier AS airline, 
+    year, 
+    COUNT(*) AS total_count
+  FROM "flight-2024"
+  GROUP BY mkt_unique_carrier, year
+)
+SELECT 
+  airline, 
+  year, 
+  total_count,
+  RANK() OVER (PARTITION BY year ORDER BY total_count DESC) AS rank
+FROM flight_count
+ORDER BY year, rank;
+
+-------------------------------------------------------------------------------------------
+Query - 2: Best time of day/day of week/time of year to fly to minimize delays
+-------------------------------------------------------------------------------------------
+
+SELECT 
+        dep_time,
+        day_of_week,
+WITH delay AS (
+        month,
+        COUNT(*) AS total_count,
+        SUM(CASE WHEN dep_delay IS NOT NULL AND dep_delay != '' AND CAST(dep_delay AS DOUBLE) > 0 THEN 1 ELSE 0 END) AS flight_delay
+    FROM 
+        "flight-2023"
+    WHERE
+        dep_time IS NOT NULL AND dep_time != ''
+    GROUP BY 
+        dep_time, day_of_week, month
+)
+SELECT 
+    dep_time, day_of_week, month, total_count,flight_delay, (flights_delay * 100.0 / total_count) AS d_percentage
+FROM 
+    delay
+ORDER BY 
+    total_count DESC, d_percentage ASC
+LIMIT 50;
+
+-------------------------------------------------------------------------------------------
+Query - 3: Older planes suffer more delays
+-------------------------------------------------------------------------------------------
+
+SELECT 
+    fa.tail_num, COUNT(*) AS total_count, SUM(CASE WHEN CAST(dep_delay AS DECIMAL(10,2)) + CAST(arr_delay AS DECIMAL(10,2)) > 0 THEN 1 ELSE 0 END) AS flights_delayed
+FROM 
+     "flight-assignment" AS fa
+WHERE 
+    dep_delay <> '' 
+    AND arr_delay <> ''
+GROUP BY 
+    fa.tail_num
+ORDER BY 
+    flights_delayed DESC;
+
+-------------------------------------------------------------------------------------------
+Query - 4: Number of people flying between different locations change over time
+-------------------------------------------------------------------------------------------
+
+SELECT 
+    fa.year, fa.dest_airport_id, airport.description, fa.month, COUNT(*) AS flights_count
+FROM 
+    "flight-assignment" AS fa
+LEFT JOIN 
+    "airport_id" AS airport
+ON 
+    airport.code = fa.dest_airport_id
+GROUP BY  
+    fa.year, fa.dest_airport_id, airport.description, fa.month
+ORDER BY 
+    fa.year DESC, flights_count DESC;
+
+-------------------------------------------------------------------------------------------
+Query - 5: Percentage of flights delayed by weather per airport
+-------------------------------------------------------------------------------------------
+
+WITH delay_weather AS (
+  SELECT 
+    origin AS airport, COUNT(*) AS total_count, SUM(CASE WHEN TRY_CAST(weather_delay AS DOUBLE) > 0 THEN 1 ELSE 0 END) AS delayed_flight
+  FROM "flight-2023"
+  WHERE delay_weather IS NOT NULL AND delay_weather != ''
+  GROUP BY origin
+  UNION ALL
+  SELECT 
+    origin_airport_id AS airport, 
+    COUNT(*) AS total_count, 
+    SUM(CASE WHEN TRY_CAST(weather_delay AS DOUBLE) > 0 THEN 1 ELSE 0 END) AS delayed_flight
+  FROM "flight-2024"
+  WHERE delay_weather IS NOT NULL AND delay_weather != ''
+  GROUP BY origin_airport_id
+)
+SELECT 
+  airport, 
+  total_count, 
+  delayed_flight, 
+  ROUND(100.0 * delayed_flight / total_count, 2) AS weather_delays
+FROM delay_weather
+ORDER BY weather_delays DESC;
+
